@@ -15,20 +15,22 @@ package com.facebook.presto.sql.planner;
 
 import com.facebook.presto.Session;
 import com.facebook.presto.client.FailureInfo;
-import com.facebook.presto.metadata.FunctionRegistry;
-import com.facebook.presto.metadata.Metadata;
-import com.facebook.presto.metadata.OperatorType;
-import com.facebook.presto.metadata.Signature;
+import com.facebook.presto.metadata.*;
 import com.facebook.presto.operator.scalar.ArraySubscriptOperator;
+import com.facebook.presto.operator.scalar.ScalarFunction;
 import com.facebook.presto.operator.scalar.ScalarFunctionImplementation;
+import com.facebook.presto.operator.scalar.TypeParameter;
 import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.RecordCursor;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.BlockBuilder;
 import com.facebook.presto.spi.block.BlockBuilderStatus;
+import com.facebook.presto.spi.block.InterleavedBlockBuilder;
 import com.facebook.presto.spi.type.StandardTypes;
 import com.facebook.presto.spi.type.Type;
+import com.facebook.presto.spi.type.TypeManager;
+import com.facebook.presto.spi.type.TypeSignature;
 import com.facebook.presto.sql.analyzer.AnalysisContext;
 import com.facebook.presto.sql.analyzer.ExpressionAnalyzer;
 import com.facebook.presto.sql.analyzer.RelationType;
@@ -72,8 +74,11 @@ import com.facebook.presto.sql.tree.SubscriptExpression;
 import com.facebook.presto.sql.tree.WhenClause;
 import com.facebook.presto.type.ArrayType;
 import com.facebook.presto.type.LikeFunctions;
+import com.facebook.presto.type.RowType;
+import com.facebook.presto.type.TypeJsonUtils;
 import com.facebook.presto.util.Failures;
 import com.facebook.presto.util.FastutilSetHelper;
+import com.facebook.presto.util.Reflection;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Functions;
 import com.google.common.base.Throwables;
@@ -87,11 +92,9 @@ import io.airlift.slice.Slice;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.invoke.MethodHandle;
-import java.util.ArrayList;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -973,7 +976,86 @@ public class ExpressionInterpreter
         @Override
         protected Object visitRow(Row node, Object context)
         {
-            throw new PrestoException(NOT_SUPPORTED, "Row expressions not yet supported");
+            RowType rowType = (RowType) expressionTypes.get(node);
+            System.out.println(rowType.toString());
+            List<Type> parameterTypes = rowType.getTypeParameters();
+            List<Expression> items = node.getItems();
+            int n = items.size();
+            List<Object> values = new ArrayList<>(n);
+            boolean hasExpression = false;
+            for (Expression item: items) {
+                Object value = process(item, context);
+                values.add(value);
+                if (value instanceof Expression) {
+                    hasExpression = true;
+                }
+            }
+            if (hasExpression) {
+                List<Boolean> nullableArguments = new ArrayList<>(n);
+                for (int i = 0; i < n; ++i) {
+                    nullableArguments.add(true);
+                }
+                List<TypeSignature> stringParameterTypes = new ArrayList<>(n);
+                for (Type type: parameterTypes) {
+                    stringParameterTypes.add(type.getTypeSignature());
+                }
+                Signature signature = new Signature("row_constructor", FunctionKind.SCALAR, rowType.getTypeSignature(), stringParameterTypes);
+                ScalarFunctionImplementation functionImplementation = null;
+                try {
+                    functionImplementation =
+                            metadata.getFunctionRegistry().getScalarFunctionImplementation(signature);
+                } catch (PrestoException e) {
+
+                }
+                if (functionImplementation == null) {
+                    try {
+                        MethodHandle methodHandle = MethodHandles.publicLookup().findStatic(ExpressionInterpreter.class, "constructRow", MethodType.methodType(Block.class, List.class, Object[].class)).bindTo(parameterTypes);
+                        methodHandle = methodHandle.asCollector(Object[].class, n).asType(MethodType.methodType(Block.class, long.class, Object.class));
+                        System.out.println("ha! " + methodHandle.isVarargsCollector());
+                        final ScalarFunctionImplementation newFunctionImplementation = new ScalarFunctionImplementation(
+                                false,
+                                nullableArguments,
+                                methodHandle,
+                                true);
+                    SqlScalarFunction function = new SqlScalarFunction("row_constructor", rowType.getTypeSignature(), stringParameterTypes, ImmutableSet.of()) {
+                        @Override
+                        public ScalarFunctionImplementation specialize(Map<String, Type> types, int arity, TypeManager typeManager, FunctionRegistry functionRegistry) {
+                            return newFunctionImplementation;
+                        }
+
+                        @Override
+                        public boolean isHidden() {
+                            return false;
+                        }
+
+                        @Override
+                        public boolean isDeterministic() {
+                            return true;
+                        }
+
+                        @Override
+                        public String getDescription() {
+                            return null;
+                        }
+                    };
+                    metadata.addFunctions(ImmutableList.of(function));
+                    functionImplementation = newFunctionImplementation;
+                    } catch (Exception e) { System.err.println(e.toString());}
+                }
+                // do not optimize non-deterministic functions
+                System.out.println(values);
+                if (optimize && (!functionImplementation.isDeterministic() || hasUnresolvedValue(values))) {
+                    return new Row(toExpressions(values, parameterTypes));
+                }
+                return invoke(session, functionImplementation, values);
+//                return new FunctionCall("row_constructor", node.getWindow(), node.isDistinct(), toExpressions(argumentValues, argumentTypes))
+            } else {
+                BlockBuilder blockBuilder =  new InterleavedBlockBuilder(parameterTypes, new BlockBuilderStatus(), n);
+                for (int i = 0; i < n; ++i) {
+                    writeNativeValue(parameterTypes.get(i), blockBuilder, values.get(i));
+                }
+                return blockBuilder.build();
+            }
         }
 
         @Override
@@ -1093,6 +1175,17 @@ public class ExpressionInterpreter
         FunctionCall failureFunction = new FunctionCall(QualifiedName.of("fail"), ImmutableList.of(jsonParse));
 
         return new Cast(failureFunction, type.getTypeSignature().toString());
+    }
+
+    public static Block constructRow(List<Type> types, Object... values)
+    {
+        int n = types.size();
+        System.out.println(values.toString());
+        BlockBuilder blockBuilder =  new InterleavedBlockBuilder(types, new BlockBuilderStatus(), n);
+        for (int i = 0; i < n; ++i) {
+            TypeJsonUtils.appendToBlockBuilder(types.get(i), values[i], blockBuilder);
+        }
+        return blockBuilder.build();
     }
 
     private static boolean isArray(Type type)

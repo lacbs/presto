@@ -27,6 +27,7 @@ import com.facebook.presto.spi.type.TypeSignature;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import jdk.nashorn.internal.runtime.Debug;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -60,6 +61,7 @@ public class RowType
             builder.add(new RowField(fieldTypes.get(i), fieldNames.map((names) -> names.get(index))));
         }
         fields = builder.build();
+        System.out.println("opa " + fieldNames + Debug.stackTraceElementAt(5));
     }
 
     @Override
@@ -94,6 +96,7 @@ public class RowType
                 fieldDisplayNames.add(typeDisplayName);
             }
         }
+        System.out.println("? " + fieldDisplayNames);
         return ROW + "(" + Joiner.on(", ").join(fieldDisplayNames) + ")";
     }
 
