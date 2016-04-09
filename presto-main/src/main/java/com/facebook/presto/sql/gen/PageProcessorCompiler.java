@@ -37,12 +37,7 @@ import com.facebook.presto.spi.block.DictionaryId;
 import com.facebook.presto.spi.block.LazyBlock;
 import com.facebook.presto.spi.block.RunLengthEncodedBlock;
 import com.facebook.presto.spi.type.Type;
-import com.facebook.presto.sql.relational.CallExpression;
-import com.facebook.presto.sql.relational.ConstantExpression;
-import com.facebook.presto.sql.relational.Expressions;
-import com.facebook.presto.sql.relational.InputReferenceExpression;
-import com.facebook.presto.sql.relational.RowExpression;
-import com.facebook.presto.sql.relational.RowExpressionVisitor;
+import com.facebook.presto.sql.relational.*;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.primitives.Primitives;
@@ -888,6 +883,12 @@ public class PageProcessorCompiler
 
             @Override
             public BytecodeNode visitConstant(ConstantExpression literal, Scope scope)
+            {
+                throw new UnsupportedOperationException("not yet implemented");
+            }
+
+            @Override
+            public BytecodeNode visitRowConstructor(RowConstructorExpression call, Scope scope)
             {
                 throw new UnsupportedOperationException("not yet implemented");
             }

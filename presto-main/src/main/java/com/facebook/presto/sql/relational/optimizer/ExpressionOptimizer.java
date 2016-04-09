@@ -19,11 +19,7 @@ import com.facebook.presto.metadata.Signature;
 import com.facebook.presto.operator.scalar.ScalarFunctionImplementation;
 import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.type.TypeManager;
-import com.facebook.presto.sql.relational.CallExpression;
-import com.facebook.presto.sql.relational.ConstantExpression;
-import com.facebook.presto.sql.relational.InputReferenceExpression;
-import com.facebook.presto.sql.relational.RowExpression;
-import com.facebook.presto.sql.relational.RowExpressionVisitor;
+import com.facebook.presto.sql.relational.*;
 import com.google.common.collect.Iterables;
 
 import java.lang.invoke.MethodHandle;
@@ -161,5 +157,12 @@ public class ExpressionOptimizer
 
             return call(signature, typeManager.getType(signature.getReturnType()), arguments);
         }
+
+        @Override
+        public RowExpression visitRowConstructor(RowConstructorExpression call, Void context)
+        {
+            return call;
+        }
     }
+
 }

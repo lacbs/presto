@@ -81,6 +81,16 @@ public final class Expressions
                     builder.add(literal);
                     return null;
                 }
+
+                @Override
+                public Void visitRowConstructor(RowConstructorExpression call, Void context)
+                {
+                    builder.add(call);
+                    for (RowExpression argument : call.getArguments()) {
+                        argument.accept(this, context);
+                    }
+                    return null;
+                }
             }, null);
         }
 

@@ -342,6 +342,12 @@ public final class SqlToRowExpressionTranslator
             {
                 return new ConstantExpression(literal.getValue(), targetType);
             }
+
+            @Override
+            public RowExpression visitRowConstructor(RowConstructorExpression row, Void context)
+            {
+                return new RowConstructorExpression(targetType, row.getArguments());
+            }
         }
 
         @Override
@@ -546,13 +552,7 @@ public final class SqlToRowExpressionTranslator
             List<RowExpression> arguments = node.getItems().stream()
                     .map(value -> process(value, context))
                     .collect(toImmutableList());
-            List<TypeSignature> argumentTypes = arguments.stream()
-                    .map(RowExpression::getType)
-                    .map(value -> value.getTypeSignature())
-                    .collect(toImmutableList());
-            Signature signature = new Signature("row_constructor", FunctionKind.SCALAR, types.get(node).getTypeSignature(), argumentTypes);
-            System.out.println(arguments);
-            return call(signature, types.get(node), arguments);
+            return new RowConstructorExpression(types.get(node), arguments);
         }
     }
 }

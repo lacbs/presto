@@ -61,7 +61,6 @@ public class RowType
             builder.add(new RowField(fieldTypes.get(i), fieldNames.map((names) -> names.get(index))));
         }
         fields = builder.build();
-        System.out.println("opa " + fieldNames + Debug.stackTraceElementAt(5));
     }
 
     @Override
@@ -96,7 +95,6 @@ public class RowType
                 fieldDisplayNames.add(typeDisplayName);
             }
         }
-        System.out.println("? " + fieldDisplayNames);
         return ROW + "(" + Joiner.on(", ").join(fieldDisplayNames) + ")";
     }
 

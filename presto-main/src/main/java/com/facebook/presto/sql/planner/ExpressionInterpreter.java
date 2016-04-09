@@ -72,10 +72,7 @@ import com.facebook.presto.sql.tree.SimpleCaseExpression;
 import com.facebook.presto.sql.tree.StringLiteral;
 import com.facebook.presto.sql.tree.SubscriptExpression;
 import com.facebook.presto.sql.tree.WhenClause;
-import com.facebook.presto.type.ArrayType;
-import com.facebook.presto.type.LikeFunctions;
-import com.facebook.presto.type.RowType;
-import com.facebook.presto.type.TypeJsonUtils;
+import com.facebook.presto.type.*;
 import com.facebook.presto.util.Failures;
 import com.facebook.presto.util.FastutilSetHelper;
 import com.facebook.presto.util.Reflection;
@@ -335,6 +332,7 @@ public class ExpressionInterpreter
         protected Object visitDereferenceExpression(DereferenceExpression node, Object context)
         {
             // Dereference is never a Symbol
+            System.out.println(node);
             return node;
         }
 
@@ -977,84 +975,19 @@ public class ExpressionInterpreter
         protected Object visitRow(Row node, Object context)
         {
             RowType rowType = (RowType) expressionTypes.get(node);
-            System.out.println(rowType.toString());
             List<Type> parameterTypes = rowType.getTypeParameters();
-            List<Expression> items = node.getItems();
-            int n = items.size();
+            List<Expression> arguments = node.getItems();
+
+            int n = arguments.size();
             List<Object> values = new ArrayList<>(n);
-            boolean hasExpression = false;
-            for (Expression item: items) {
-                Object value = process(item, context);
+            for (Expression argument: arguments) {
+                Object value = process(argument, context);
                 values.add(value);
-                if (value instanceof Expression) {
-                    hasExpression = true;
-                }
             }
-            if (hasExpression) {
-                List<Boolean> nullableArguments = new ArrayList<>(n);
-                for (int i = 0; i < n; ++i) {
-                    nullableArguments.add(true);
-                }
-                List<TypeSignature> stringParameterTypes = new ArrayList<>(n);
-                for (Type type: parameterTypes) {
-                    stringParameterTypes.add(type.getTypeSignature());
-                }
-                Signature signature = new Signature("row_constructor", FunctionKind.SCALAR, rowType.getTypeSignature(), stringParameterTypes);
-                ScalarFunctionImplementation functionImplementation = null;
-                try {
-                    functionImplementation =
-                            metadata.getFunctionRegistry().getScalarFunctionImplementation(signature);
-                } catch (PrestoException e) {
-
-                }
-                if (functionImplementation == null) {
-                    try {
-                        MethodHandle methodHandle = MethodHandles.publicLookup().findStatic(ExpressionInterpreter.class, "constructRow", MethodType.methodType(Block.class, List.class, Object[].class)).bindTo(parameterTypes);
-                        methodHandle = methodHandle.asCollector(Object[].class, n).asType(MethodType.methodType(Block.class, long.class, Object.class));
-                        System.out.println("ha! " + methodHandle.isVarargsCollector());
-                        final ScalarFunctionImplementation newFunctionImplementation = new ScalarFunctionImplementation(
-                                false,
-                                nullableArguments,
-                                methodHandle,
-                                true);
-                    SqlScalarFunction function = new SqlScalarFunction("row_constructor", rowType.getTypeSignature(), stringParameterTypes, ImmutableSet.of()) {
-                        @Override
-                        public ScalarFunctionImplementation specialize(Map<String, Type> types, int arity, TypeManager typeManager, FunctionRegistry functionRegistry) {
-                            return newFunctionImplementation;
-                        }
-
-                        @Override
-                        public boolean isHidden() {
-                            return false;
-                        }
-
-                        @Override
-                        public boolean isDeterministic() {
-                            return true;
-                        }
-
-                        @Override
-                        public String getDescription() {
-                            return null;
-                        }
-                    };
-                    metadata.addFunctions(ImmutableList.of(function));
-                    functionImplementation = newFunctionImplementation;
-                    } catch (Exception e) { System.err.println(e.toString());}
-                }
-                // do not optimize non-deterministic functions
-                System.out.println(values);
-                if (optimize && (!functionImplementation.isDeterministic() || hasUnresolvedValue(values))) {
-                    return new Row(toExpressions(values, parameterTypes));
-                }
-                return invoke(session, functionImplementation, values);
-//                return new FunctionCall("row_constructor", node.getWindow(), node.isDistinct(), toExpressions(argumentValues, argumentTypes))
+            if (optimize && hasUnresolvedValue(values)) {
+                return new Row(toExpressions(values, parameterTypes));
             } else {
-                BlockBuilder blockBuilder =  new InterleavedBlockBuilder(parameterTypes, new BlockBuilderStatus(), n);
-                for (int i = 0; i < n; ++i) {
-                    writeNativeValue(parameterTypes.get(i), blockBuilder, values.get(i));
-                }
-                return blockBuilder.build();
+                return RowConstructor.constructRow(values, parameterTypes);
             }
         }
 
@@ -1175,17 +1108,6 @@ public class ExpressionInterpreter
         FunctionCall failureFunction = new FunctionCall(QualifiedName.of("fail"), ImmutableList.of(jsonParse));
 
         return new Cast(failureFunction, type.getTypeSignature().toString());
-    }
-
-    public static Block constructRow(List<Type> types, Object... values)
-    {
-        int n = types.size();
-        System.out.println(values.toString());
-        BlockBuilder blockBuilder =  new InterleavedBlockBuilder(types, new BlockBuilderStatus(), n);
-        for (int i = 0; i < n; ++i) {
-            TypeJsonUtils.appendToBlockBuilder(types.get(i), values[i], blockBuilder);
-        }
-        return blockBuilder.build();
     }
 
     private static boolean isArray(Type type)

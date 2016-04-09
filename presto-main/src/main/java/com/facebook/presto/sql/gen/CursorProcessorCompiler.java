@@ -30,11 +30,7 @@ import com.facebook.presto.spi.PageBuilder;
 import com.facebook.presto.spi.RecordCursor;
 import com.facebook.presto.spi.block.BlockBuilder;
 import com.facebook.presto.spi.type.Type;
-import com.facebook.presto.sql.relational.CallExpression;
-import com.facebook.presto.sql.relational.ConstantExpression;
-import com.facebook.presto.sql.relational.InputReferenceExpression;
-import com.facebook.presto.sql.relational.RowExpression;
-import com.facebook.presto.sql.relational.RowExpressionVisitor;
+import com.facebook.presto.sql.relational.*;
 import com.google.common.primitives.Primitives;
 import io.airlift.slice.Slice;
 
@@ -259,6 +255,12 @@ public class CursorProcessorCompiler
 
             @Override
             public BytecodeNode visitCall(CallExpression call, Scope scope)
+            {
+                throw new UnsupportedOperationException("not yet implemented");
+            }
+
+            @Override
+            public BytecodeNode visitRowConstructor(RowConstructorExpression call, Scope scope)
             {
                 throw new UnsupportedOperationException("not yet implemented");
             }
