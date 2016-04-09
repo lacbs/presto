@@ -488,6 +488,7 @@ public class FunctionRegistry
         if (name.getSuffix().startsWith(MAGIC_LITERAL_FUNCTION_PREFIX)) {
             // extract type from function name
             String typeName = name.getSuffix().substring(MAGIC_LITERAL_FUNCTION_PREFIX.length());
+            typeName = typeName.replace('{', '<').replace('}', '>');
 
             // lookup the type
             Type type = typeManager.getType(parseTypeSignature(typeName));
@@ -600,7 +601,7 @@ public class FunctionRegistry
         if (signature.getName().startsWith(MAGIC_LITERAL_FUNCTION_PREFIX)) {
             List<TypeSignature> parameterTypes = signature.getArgumentTypes();
             // extract type from function name
-            String typeName = signature.getName().substring(MAGIC_LITERAL_FUNCTION_PREFIX.length());
+            String typeName = signature.getReturnType().toString();
 
             // lookup the type
             Type type = typeManager.getType(parseTypeSignature(typeName));
@@ -738,8 +739,9 @@ public class FunctionRegistry
     public static Signature getMagicLiteralFunctionSignature(Type type)
     {
         TypeSignature argumentType = typeForMagicLiteral(type).getTypeSignature();
+        String name = MAGIC_LITERAL_FUNCTION_PREFIX + type.getTypeSignature();
 
-        return new Signature(MAGIC_LITERAL_FUNCTION_PREFIX + type.getTypeSignature(),
+        return new Signature(name.replace('<', '{').replace('>', '}'),
                 SCALAR,
                 type.getTypeSignature(),
                 argumentType);

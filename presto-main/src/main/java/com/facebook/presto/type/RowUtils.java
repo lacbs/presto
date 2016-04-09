@@ -16,6 +16,8 @@ package com.facebook.presto.type;
 import com.facebook.presto.bytecode.BytecodeBlock;
 import com.facebook.presto.bytecode.BytecodeNode;
 import com.facebook.presto.bytecode.Variable;
+import com.facebook.presto.bytecode.control.IfStatement;
+import com.facebook.presto.bytecode.instruction.Constant;
 import com.facebook.presto.metadata.Signature;
 import com.facebook.presto.metadata.SqlFunction;
 import com.facebook.presto.operator.scalar.RowFieldReference;
@@ -30,10 +32,14 @@ import com.facebook.presto.sql.gen.BytecodeUtils;
 import com.facebook.presto.sql.relational.RowExpression;
 import com.google.common.collect.ImmutableList;
 import io.airlift.slice.Slice;
+import io.airlift.slice.Slices;
 
+import java.io.PrintStream;
 import java.util.List;
 import java.util.Optional;
 
+import static com.facebook.presto.bytecode.expression.BytecodeExpressions.constantFalse;
+import static com.facebook.presto.bytecode.expression.BytecodeExpressions.constantTrue;
 import static com.facebook.presto.type.RowType.RowField;
 import static com.facebook.presto.util.Types.checkType;
 import static com.google.common.base.Preconditions.checkArgument;
@@ -60,47 +66,93 @@ public final class RowUtils
         List<Type> typeParameters = rowType.getTypeParameters();
         int n = arguments.size();
 
-        Binding typesBinding = context.getCallSiteBinder().bind(typeParameters, List.class);
-
         block.comment("BlockBuilderStatus blockBuilderStatus = new BlockBuilderStatus()");
         Variable blockBuilderStatusVar = context.getScope().createTempVariable(BlockBuilderStatus.class);
+        block.newObject(BlockBuilderStatus.class);
+        block.dup(BlockBuilderStatus.class);
         block.invokeConstructor(BlockBuilderStatus.class);
         block.putVariable(blockBuilderStatusVar);
 
         block.comment("BlockBuilder blockBuilder = new InterleavedBlockBuilder(types, blockBuilderStatus, n)");
         Variable blockBuilderVar = context.getScope().createTempVariable(BlockBuilder.class);
+        block.newObject(InterleavedBlockBuilder.class);
+        block.dup(InterleavedBlockBuilder.class);
+        Binding typesBinding = context.getCallSiteBinder().bind(typeParameters, List.class);
         block.append(BytecodeUtils.loadConstant(typesBinding));
-        block.append(blockBuilderStatusVar);
+        block.getVariable(blockBuilderStatusVar);
         block.push(n);
         block.invokeConstructor(InterleavedBlockBuilder.class, List.class, BlockBuilderStatus.class, int.class);
         block.putVariable(blockBuilderVar);
 
-        block.comment("N times: TypeJsonUtils.appendToBlockBuilder(type, argument, blockBuilder)");
         for (int i = 0; i < n; ++i) {
-            Binding typeBinding = context.getCallSiteBinder().bind(typeParameters.get(i), Type.class);
-            block.append(BytecodeUtils.loadConstant(typeBinding));
+            Type elementType = typeParameters.get(i);
+            Class javaType = elementType.getJavaType();
+            if (javaType == void.class) {
+                block.getVariable(blockBuilderVar);
+                block.invokeInterface(BlockBuilder.class, "appendNull", BlockBuilder.class);
+                block.pop(BlockBuilder.class);
+                continue;
+            }
+            BytecodeBlock appendNullBlock = new BytecodeBlock()
+                    .pop(javaType)
+                    .getVariable(blockBuilderVar)
+                    .invokeInterface(BlockBuilder.class, "appendNull", BlockBuilder.class)
+                    .pop(BlockBuilder.class);
+
+            BytecodeBlock appendElementBlock = new BytecodeBlock();
+            Binding typeBinding = context.getCallSiteBinder().bind(elementType, Type.class);
+            Variable element = context.getScope().createTempVariable(javaType);
+            appendElementBlock.putVariable(element);
+            appendElementBlock.append(BytecodeUtils.loadConstant(typeBinding));
+            appendElementBlock.getVariable(blockBuilderVar);
+            appendElementBlock.getVariable(element);
+
+            if (javaType == boolean.class) {
+                appendElementBlock.invokeInterface(Type.class, "writeBoolean", void.class, BlockBuilder.class, boolean.class);
+                appendElementBlock.pop(void.class);
+            }
+            else if (javaType == long.class) {
+                appendElementBlock.invokeInterface(Type.class, "writeLong", void.class, BlockBuilder.class, long.class);
+                appendElementBlock.pop(void.class);
+            }
+            else if (javaType == double.class) {
+                appendElementBlock.invokeInterface(Type.class, "writeDouble", void.class, BlockBuilder.class, double.class);
+                appendElementBlock.pop(void.class);
+            }
+            else if (javaType == Slice.class) {
+                appendElementBlock.invokeInterface(Type.class, "writeSlice", void.class, BlockBuilder.class, Slice.class);
+                appendElementBlock.pop(void.class);
+            }
+            else {
+                appendElementBlock.invokeInterface(Type.class, "writeObject", void.class, BlockBuilder.class, Object.class);
+                appendElementBlock.pop(void.class);
+            }
+
             block.append(context.generate(arguments.get(i)));
-            block.append(blockBuilderVar);
-            block.invokeStatic(TypeJsonUtils.class, "appendToBlockBuilder", Type.class, Object.class, BlockBuilder.class);
+            block.append(new IfStatement().condition(context.wasNull()).ifTrue(appendNullBlock).ifFalse(appendElementBlock));
         }
+        block.getVariable(blockBuilderVar);
+        block.invokeInterface(BlockBuilder.class, "build", Block.class);
+        block.append(context.wasNull().set(constantFalse()));
         return block;
     }
 
     public static Object access(Block row, Type elementType, int index)
     {
-        if (elementType.getJavaType() == void.class) {
+        Class javaType = elementType.getJavaType();
+        if (javaType == void.class) {
             return null;
         }
-        if (elementType.getJavaType() == boolean.class) {
+        if (javaType == boolean.class) {
             return elementType.getBoolean(row, index - 1);
         }
-        if (elementType.getJavaType() == long.class) {
+        if (javaType == long.class) {
             return elementType.getLong(row, index - 1);
         }
-        if (elementType.getJavaType() == double.class) {
+        if (javaType == double.class) {
             return elementType.getDouble(row, index - 1);
         }
-        if (elementType.getJavaType() == Slice.class) {
+        if (javaType == Slice.class) {
             return elementType.getSlice(row, index - 1);
         }
         return elementType.getObject(row, index - 1);
@@ -109,30 +161,47 @@ public final class RowUtils
 
     public static BytecodeNode generateAccessorBytecode(BytecodeGeneratorContext context, RowExpression row, Type elementType, int index) {
         BytecodeBlock block = new BytecodeBlock().setDescription("Accessor of " + index + "-th element of a row as " + elementType.toString());
+        Class javaType = elementType.getJavaType();
 
-        if (elementType.getJavaType() == void.class) {
-            return block;
+        Variable wasNull = context.wasNull();
+        BytecodeBlock nullBlock = new BytecodeBlock().pushJavaDefault(javaType).append(wasNull.set(constantTrue()));
+        if (javaType == void.class) {
+            return block.append(nullBlock);
         }
-
-        Binding typeBinding = context.getCallSiteBinder().bind(elementType, Type.class);
-        block.append(BytecodeUtils.loadConstant(typeBinding));
+        Variable rowVar = context.getScope().createTempVariable(Block.class);
         block.append(context.generate(row));
-        block.push(index - 1);
-        if (elementType.getJavaType() == boolean.class) {
-            block.invokeVirtual(Type.class, "getBoolean", boolean.class, Block.class, int.class);
+        block.putVariable(rowVar);
+
+        BytecodeBlock elementIsNullBlock = new BytecodeBlock();
+        elementIsNullBlock.getVariable(rowVar);
+        elementIsNullBlock.push(index - 1);
+        elementIsNullBlock.invokeInterface(Block.class, "isNull", boolean.class, int.class);
+
+        BytecodeBlock getElementBlock = new BytecodeBlock();
+        Binding typeBinding = context.getCallSiteBinder().bind(elementType, Type.class);
+        getElementBlock.append(BytecodeUtils.loadConstant(typeBinding));
+        getElementBlock.append(context.generate(row));
+        getElementBlock.push(index - 1);
+        if (javaType == boolean.class) {
+            getElementBlock.invokeInterface(Type.class, "getBoolean", boolean.class, Block.class, int.class);
         }
-        else if (elementType.getJavaType() == long.class) {
-            block.invokeVirtual(Type.class, "getLong", long.class, Block.class, int.class);
+        else if (javaType == long.class) {
+            getElementBlock.invokeInterface(Type.class, "getLong", long.class, Block.class, int.class);
         }
-        else if (elementType.getJavaType() == double.class) {
-            block.invokeVirtual(Type.class, "getDouble", double.class, Block.class, int.class);
+        else if (javaType == double.class) {
+            getElementBlock.invokeInterface(Type.class, "getDouble", double.class, Block.class, int.class);
         }
-        else if (elementType.getJavaType() == Slice.class) {
-            block.invokeVirtual(Type.class, "getSlice", Slice.class, Block.class, int.class);
+        else if (javaType == Slice.class) {
+            getElementBlock.invokeInterface(Type.class, "getSlice", Slice.class, Block.class, int.class);
         }
         else {
-            block.invokeVirtual(Type.class, "getObject", Object.class, Block.class, int.class);
+            getElementBlock.invokeInterface(Type.class, "getObject", Object.class, Block.class, int.class);
         }
+        getElementBlock.append(wasNull.set(constantFalse()));
+
+        IfStatement getElementOrNull = new IfStatement();
+        getElementOrNull.condition(elementIsNullBlock).ifTrue(nullBlock).ifFalse(getElementBlock);
+        block.append(new IfStatement().condition(wasNull).ifTrue(nullBlock).ifFalse(getElementOrNull));
         return block;
     }
 

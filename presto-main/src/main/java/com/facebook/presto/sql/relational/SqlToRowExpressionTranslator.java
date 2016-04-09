@@ -17,10 +17,7 @@ import com.facebook.presto.Session;
 import com.facebook.presto.metadata.FunctionKind;
 import com.facebook.presto.metadata.FunctionRegistry;
 import com.facebook.presto.metadata.Signature;
-import com.facebook.presto.spi.type.TimeZoneKey;
-import com.facebook.presto.spi.type.Type;
-import com.facebook.presto.spi.type.TypeManager;
-import com.facebook.presto.spi.type.TypeSignature;
+import com.facebook.presto.spi.type.*;
 import com.facebook.presto.sql.relational.optimizer.ExpressionOptimizer;
 import com.facebook.presto.sql.tree.*;
 import com.facebook.presto.type.RowType;
@@ -534,7 +531,7 @@ public final class SqlToRowExpressionTranslator
             RowExpression base = process(node.getBase(), context);
             RowExpression index = process(node.getIndex(), context);
 
-            if (base instanceof RowConstructorExpression) {
+            if (base.getType() instanceof RowType) {
                 return new RowAccessorExpression(base, node.getIndex());
             }
 
