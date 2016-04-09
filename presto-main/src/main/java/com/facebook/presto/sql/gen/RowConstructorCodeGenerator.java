@@ -13,37 +13,22 @@
  */
 package com.facebook.presto.sql.gen;
 
-import com.facebook.presto.bytecode.BytecodeBlock;
 import com.facebook.presto.bytecode.BytecodeNode;
-import com.facebook.presto.bytecode.Variable;
-import com.facebook.presto.bytecode.control.IfStatement;
 import com.facebook.presto.metadata.Signature;
-import com.facebook.presto.spi.block.Block;
-import com.facebook.presto.spi.block.BlockBuilder;
-import com.facebook.presto.spi.block.BlockBuilderStatus;
-import com.facebook.presto.spi.block.InterleavedBlockBuilder;
 import com.facebook.presto.spi.type.Type;
-import com.facebook.presto.sql.planner.ExpressionInterpreter;
 import com.facebook.presto.sql.relational.RowExpression;
-import com.facebook.presto.type.RowConstructor;
+import com.facebook.presto.type.RowUtils;
 import com.facebook.presto.type.RowType;
-import com.facebook.presto.type.TypeJsonUtils;
-import com.google.common.base.Preconditions;
 
 import javax.annotation.Nullable;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.util.List;
 
-import static com.facebook.presto.bytecode.expression.BytecodeExpressions.constantFalse;
-
-public class RowCodeGenerator
+public class RowConstructorCodeGenerator
         implements BytecodeGenerator
 {
     @Override
     public BytecodeNode generateExpression(@Nullable Signature signature, BytecodeGeneratorContext context, Type rowType, List<RowExpression> arguments)
     {
-        return RowConstructor.generateBytecodeBlock(context, (RowType) rowType, arguments);
+        return RowUtils.generateConstructorBytecode(context, (RowType) rowType, arguments);
     }
 }

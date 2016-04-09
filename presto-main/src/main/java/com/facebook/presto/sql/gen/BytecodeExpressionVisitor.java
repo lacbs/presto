@@ -18,6 +18,7 @@ import com.facebook.presto.bytecode.BytecodeNode;
 import com.facebook.presto.bytecode.Scope;
 import com.facebook.presto.metadata.FunctionRegistry;
 import com.facebook.presto.sql.relational.*;
+import com.facebook.presto.type.RowUtils;
 
 import static com.facebook.presto.bytecode.expression.BytecodeExpressions.constantTrue;
 import static com.facebook.presto.bytecode.instruction.Constant.loadBoolean;
@@ -112,7 +113,6 @@ public class BytecodeExpressionVisitor
         return generator.generateExpression(call.getSignature(), generatorContext, call.getType(), call.getArguments());
     }
 
-
     @Override
     public BytecodeNode visitRowConstructor(RowConstructorExpression row, final Scope scope)
     {
@@ -123,7 +123,20 @@ public class BytecodeExpressionVisitor
                 cachedInstanceBinder,
                 registry);
 
-        return new RowCodeGenerator().generateExpression(null, generatorContext, row.getType(), row.getArguments());
+        return new RowConstructorCodeGenerator().generateExpression(null, generatorContext, row.getType(), row.getArguments());
+    }
+
+    @Override
+    public BytecodeNode visitRowAccessor(RowAccessorExpression rowAccessor, final Scope scope)
+    {
+        BytecodeGeneratorContext generatorContext = new BytecodeGeneratorContext(
+                this,
+                scope,
+                callSiteBinder,
+                cachedInstanceBinder,
+                registry);
+
+        return RowUtils.generateAccessorBytecode(generatorContext, rowAccessor.getRow(), rowAccessor.getType(), rowAccessor.getIndex());
     }
 
     @Override

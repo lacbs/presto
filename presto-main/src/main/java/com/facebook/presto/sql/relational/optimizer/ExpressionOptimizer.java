@@ -159,9 +159,15 @@ public class ExpressionOptimizer
         }
 
         @Override
-        public RowExpression visitRowConstructor(RowConstructorExpression call, Void context)
+        public RowExpression visitRowConstructor(RowConstructorExpression row, Void context)
         {
-            return call;
+            return row;
+        }
+
+        @Override
+        public RowExpression visitRowAccessor(RowAccessorExpression rowAccessor, Void context)
+        {
+            return rowAccessor;
         }
     }
 

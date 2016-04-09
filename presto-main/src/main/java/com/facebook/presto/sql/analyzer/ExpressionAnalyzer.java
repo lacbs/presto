@@ -543,6 +543,22 @@ public class ExpressionAnalyzer
         @Override
         protected Type visitSubscriptExpression(SubscriptExpression node, StackableAstVisitorContext<AnalysisContext> context)
         {
+            Type baseType = process(node.getBase(), context);
+            process(node.getIndex(), context);
+            if (baseType instanceof RowType) {
+                Expression indexExpression = node.getIndex();
+                if (indexExpression instanceof LongLiteral) {
+                    long index = ((LongLiteral) indexExpression).getValue();
+                    List<Type> typeParameters = baseType.getTypeParameters();
+                    if (1 <= index && index <= typeParameters.size()) {
+                        Type type = typeParameters.get((int) index - 1);
+                        expressionTypes.put(node, type);
+                        return type;
+                    }
+                    throw new SemanticException(TYPE_MISMATCH, node, "Accessor for Row should be between 1 and the its size");
+                }
+                throw new SemanticException(TYPE_MISMATCH, node, "Accessor for Row should be integer literal");
+            }
             return getOperator(context, node, SUBSCRIPT, node.getBase(), node.getIndex());
         }
 

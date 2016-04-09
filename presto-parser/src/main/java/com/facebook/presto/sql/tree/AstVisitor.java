@@ -379,8 +379,7 @@ public abstract class AstVisitor<R, C>
 
     protected R visitRow(Row node, C context)
     {
-        visitNode(node, context);
-        throw new Error(". " + this.getClass().toString() + " " + this.toString());
+        return visitNode(node, context);
     }
 
     protected R visitTableSubquery(TableSubquery node, C context)

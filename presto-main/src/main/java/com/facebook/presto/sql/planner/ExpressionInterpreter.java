@@ -17,20 +17,15 @@ import com.facebook.presto.Session;
 import com.facebook.presto.client.FailureInfo;
 import com.facebook.presto.metadata.*;
 import com.facebook.presto.operator.scalar.ArraySubscriptOperator;
-import com.facebook.presto.operator.scalar.ScalarFunction;
 import com.facebook.presto.operator.scalar.ScalarFunctionImplementation;
-import com.facebook.presto.operator.scalar.TypeParameter;
 import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.RecordCursor;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.BlockBuilder;
 import com.facebook.presto.spi.block.BlockBuilderStatus;
-import com.facebook.presto.spi.block.InterleavedBlockBuilder;
 import com.facebook.presto.spi.type.StandardTypes;
 import com.facebook.presto.spi.type.Type;
-import com.facebook.presto.spi.type.TypeManager;
-import com.facebook.presto.spi.type.TypeSignature;
 import com.facebook.presto.sql.analyzer.AnalysisContext;
 import com.facebook.presto.sql.analyzer.ExpressionAnalyzer;
 import com.facebook.presto.sql.analyzer.RelationType;
@@ -75,7 +70,6 @@ import com.facebook.presto.sql.tree.WhenClause;
 import com.facebook.presto.type.*;
 import com.facebook.presto.util.Failures;
 import com.facebook.presto.util.FastutilSetHelper;
-import com.facebook.presto.util.Reflection;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Functions;
 import com.google.common.base.Throwables;
@@ -89,8 +83,6 @@ import io.airlift.slice.Slice;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -332,7 +324,6 @@ public class ExpressionInterpreter
         protected Object visitDereferenceExpression(DereferenceExpression node, Object context)
         {
             // Dereference is never a Symbol
-            System.out.println(node);
             return node;
         }
 
@@ -987,7 +978,7 @@ public class ExpressionInterpreter
             if (optimize && hasUnresolvedValue(values)) {
                 return new Row(toExpressions(values, parameterTypes));
             } else {
-                return RowConstructor.constructRow(values, parameterTypes);
+                return RowUtils.construct(values, parameterTypes);
             }
         }
 
@@ -1008,6 +999,12 @@ public class ExpressionInterpreter
 
             if (hasUnresolvedValue(base, index)) {
                 return new SubscriptExpression(toExpression(base, expressionTypes.get(node.getBase())), toExpression(index, expressionTypes.get(node.getIndex())));
+            }
+
+            Type baseType = expressionTypes.get(node.getBase());
+            if (baseType instanceof RowType) {
+                int indexNumber = (int) (long) (Long) index;
+                return RowUtils.access((Block) base, baseType.getTypeParameters().get(indexNumber - 1), indexNumber);
             }
 
             return invokeOperator(OperatorType.SUBSCRIPT, types(node.getBase(), node.getIndex()), ImmutableList.of(base, index));

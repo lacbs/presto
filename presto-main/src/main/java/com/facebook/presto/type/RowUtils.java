@@ -29,6 +29,7 @@ import com.facebook.presto.sql.gen.BytecodeGeneratorContext;
 import com.facebook.presto.sql.gen.BytecodeUtils;
 import com.facebook.presto.sql.relational.RowExpression;
 import com.google.common.collect.ImmutableList;
+import io.airlift.slice.Slice;
 
 import java.util.List;
 import java.util.Optional;
@@ -38,13 +39,13 @@ import static com.facebook.presto.util.Types.checkType;
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.util.stream.Collectors.toList;
 
-public final class RowConstructor
+public final class RowUtils
 {
-    private RowConstructor()
+    private RowUtils()
     {
     }
 
-    public static Block constructRow(List<Object> values, List<Type> types)
+    public static Block construct(List<Object> values, List<Type> types)
     {
         int n = types.size();
         BlockBuilder blockBuilder =  new InterleavedBlockBuilder(types, new BlockBuilderStatus(), n);
@@ -54,8 +55,7 @@ public final class RowConstructor
         return blockBuilder.build();
     }
 
-
-    public static BytecodeNode generateBytecodeBlock(BytecodeGeneratorContext context, RowType rowType, List<RowExpression> arguments) {
+    public static BytecodeNode generateConstructorBytecode(BytecodeGeneratorContext context, RowType rowType, List<RowExpression> arguments) {
         BytecodeBlock block = new BytecodeBlock().setDescription("Constructor for " + rowType.toString());
         List<Type> typeParameters = rowType.getTypeParameters();
         int n = arguments.size();
@@ -85,4 +85,55 @@ public final class RowConstructor
         }
         return block;
     }
+
+    public static Object access(Block row, Type elementType, int index)
+    {
+        if (elementType.getJavaType() == void.class) {
+            return null;
+        }
+        if (elementType.getJavaType() == boolean.class) {
+            return elementType.getBoolean(row, index - 1);
+        }
+        if (elementType.getJavaType() == long.class) {
+            return elementType.getLong(row, index - 1);
+        }
+        if (elementType.getJavaType() == double.class) {
+            return elementType.getDouble(row, index - 1);
+        }
+        if (elementType.getJavaType() == Slice.class) {
+            return elementType.getSlice(row, index - 1);
+        }
+        return elementType.getObject(row, index - 1);
+    }
+
+
+    public static BytecodeNode generateAccessorBytecode(BytecodeGeneratorContext context, RowExpression row, Type elementType, int index) {
+        BytecodeBlock block = new BytecodeBlock().setDescription("Accessor of " + index + "-th element of a row as " + elementType.toString());
+
+        if (elementType.getJavaType() == void.class) {
+            return block;
+        }
+
+        Binding typeBinding = context.getCallSiteBinder().bind(elementType, Type.class);
+        block.append(BytecodeUtils.loadConstant(typeBinding));
+        block.append(context.generate(row));
+        block.push(index - 1);
+        if (elementType.getJavaType() == boolean.class) {
+            block.invokeVirtual(Type.class, "getBoolean", boolean.class, Block.class, int.class);
+        }
+        else if (elementType.getJavaType() == long.class) {
+            block.invokeVirtual(Type.class, "getLong", long.class, Block.class, int.class);
+        }
+        else if (elementType.getJavaType() == double.class) {
+            block.invokeVirtual(Type.class, "getDouble", double.class, Block.class, int.class);
+        }
+        else if (elementType.getJavaType() == Slice.class) {
+            block.invokeVirtual(Type.class, "getSlice", Slice.class, Block.class, int.class);
+        }
+        else {
+            block.invokeVirtual(Type.class, "getObject", Object.class, Block.class, int.class);
+        }
+        return block;
+    }
+
 }

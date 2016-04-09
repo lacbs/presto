@@ -23,6 +23,7 @@ import com.facebook.presto.spi.type.TypeManager;
 import com.facebook.presto.spi.type.TypeSignature;
 import com.facebook.presto.sql.relational.optimizer.ExpressionOptimizer;
 import com.facebook.presto.sql.tree.*;
+import com.facebook.presto.type.RowType;
 import com.facebook.presto.type.UnknownType;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
@@ -348,6 +349,12 @@ public final class SqlToRowExpressionTranslator
             {
                 return new RowConstructorExpression(targetType, row.getArguments());
             }
+
+            @Override
+            public RowExpression visitRowAccessor(RowAccessorExpression rowAccessor, Void context)
+            {
+                return new RowAccessorExpression(rowAccessor.getRow(), targetType, rowAccessor.getIndex());
+            }
         }
 
         @Override
@@ -526,6 +533,10 @@ public final class SqlToRowExpressionTranslator
         {
             RowExpression base = process(node.getBase(), context);
             RowExpression index = process(node.getIndex(), context);
+
+            if (base instanceof RowConstructorExpression) {
+                return new RowAccessorExpression(base, node.getIndex());
+            }
 
             return call(
                     subscriptSignature(types.get(node), base.getType(), index.getType()),

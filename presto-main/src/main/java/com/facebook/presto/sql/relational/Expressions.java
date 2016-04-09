@@ -83,12 +83,20 @@ public final class Expressions
                 }
 
                 @Override
-                public Void visitRowConstructor(RowConstructorExpression call, Void context)
+                public Void visitRowConstructor(RowConstructorExpression row, Void context)
                 {
-                    builder.add(call);
-                    for (RowExpression argument : call.getArguments()) {
+                    builder.add(row);
+                    for (RowExpression argument : row.getArguments()) {
                         argument.accept(this, context);
                     }
+                    return null;
+                }
+
+                @Override
+                public Void visitRowAccessor(RowAccessorExpression rowAccessor, Void context)
+                {
+                    builder.add(rowAccessor);
+                    rowAccessor.getRow().accept(this, context);
                     return null;
                 }
             }, null);

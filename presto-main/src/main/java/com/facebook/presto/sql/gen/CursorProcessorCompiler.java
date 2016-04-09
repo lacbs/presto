@@ -260,7 +260,13 @@ public class CursorProcessorCompiler
             }
 
             @Override
-            public BytecodeNode visitRowConstructor(RowConstructorExpression call, Scope scope)
+            public BytecodeNode visitRowConstructor(RowConstructorExpression row, Scope scope)
+            {
+                throw new UnsupportedOperationException("not yet implemented");
+            }
+
+            @Override
+            public BytecodeNode visitRowAccessor(RowAccessorExpression rowAccessor, Scope scope)
             {
                 throw new UnsupportedOperationException("not yet implemented");
             }
