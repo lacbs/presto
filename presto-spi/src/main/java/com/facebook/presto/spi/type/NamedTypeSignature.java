@@ -58,7 +58,7 @@ public class NamedTypeSignature
 
         NamedTypeSignature other = (NamedTypeSignature) o;
 
-        return Objects.equals(this.name, other.name) &&
+        return this.name.equalsIgnoreCase(name) &&
                 Objects.equals(this.typeSignature, other.typeSignature);
     }
 

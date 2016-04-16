@@ -56,6 +56,8 @@ public class TestRowOperators
     public void testRowToJson()
             throws Exception
     {
+        assertFunction("a.col0 from (values (test_row(1, 2))) as t(a)", BIGINT, 1);
+
         assertFunction("CAST(test_row(1, 2) AS JSON)", JSON, "[1,2]");
         assertFunction("CAST(test_row(1, CAST(NULL AS BIGINT)) AS JSON)", JSON, "[1,null]");
         assertFunction("CAST(test_row(1, 2.0) AS JSON)", JSON, "[1,2.0]");

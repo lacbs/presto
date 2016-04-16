@@ -800,7 +800,7 @@ public class TestSqlParser
                         Optional.empty(),
                         Optional.empty()));
 
-        assertStatement("SELECT test_row(11, 12).col0",
+        assertStatement("SELECT a.col0  from (values (test_row(11, 12))) as t(a)",
                 new Query(
                         Optional.empty(),
                         new QuerySpecification(

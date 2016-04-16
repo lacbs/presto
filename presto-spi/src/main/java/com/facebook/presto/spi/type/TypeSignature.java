@@ -237,7 +237,7 @@ public class TypeSignature
         verify(parameters.size() == fieldNames.size() || fieldNames.isEmpty(), "Number of parameters and fieldNames for ROW type doesn't match");
         List<TypeSignatureParameter> result = new ArrayList<>();
         for (int i = 0; i < parameters.size(); i++) {
-            String fieldName = fieldNames.isEmpty() ? format("field%d", i) : fieldNames.get(i);
+            String fieldName = fieldNames.isEmpty() ? format("FIELD%d", i) : fieldNames.get(i);
             result.add(TypeSignatureParameter.of(new NamedTypeSignature(fieldName, parameters.get(i))));
         }
         return result;

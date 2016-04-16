@@ -15,11 +15,21 @@ package com.facebook.presto.operator.scalar;
 
 import com.facebook.presto.operator.Description;
 import com.facebook.presto.spi.PrestoException;
+import com.facebook.presto.spi.block.Block;
+import com.facebook.presto.spi.block.BlockBuilder;
+import com.facebook.presto.spi.block.BlockBuilderStatus;
+import com.facebook.presto.spi.block.InterleavedBlockBuilder;
+import com.facebook.presto.spi.type.BigintType;
 import com.facebook.presto.spi.type.StandardTypes;
+import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.type.SqlType;
+import com.facebook.presto.type.TypeJsonUtils;
+import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Doubles;
 import io.airlift.slice.Slice;
 
+import javax.annotation.Nullable;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static com.facebook.presto.spi.StandardErrorCode.INVALID_FUNCTION_ARGUMENT;
@@ -384,6 +394,22 @@ public final class MathFunctions
         catch (NumberFormatException e) {
             throw new PrestoException(INVALID_FUNCTION_ARGUMENT, format("Not a valid base-%d number: %s", radix, value.toStringUtf8()), e);
         }
+    }
+
+    @ScalarFunction("test_row")
+    @SqlType("row<bigint,bigint>('col0','col1')")
+    public static Block testRowBigintBigint(@Nullable @SqlType(StandardTypes.BIGINT) Long arg1, @Nullable @SqlType(StandardTypes.BIGINT) Long arg2)
+    {
+        return toStackRepresentation(ImmutableList.of(BigintType.BIGINT, BigintType.BIGINT), arg1, arg2);
+    }
+
+    public static Block toStackRepresentation(List<Type> parameterTypes, Object... values)
+    {
+        BlockBuilder blockBuilder =  new InterleavedBlockBuilder(parameterTypes, new BlockBuilderStatus(), 1024);
+        for (int i = 0; i < values.length; i++) {
+            TypeJsonUtils.appendToBlockBuilder(parameterTypes.get(i), values[i], blockBuilder);
+        }
+        return blockBuilder.build();
     }
 
     private static void checkRadix(long radix)
